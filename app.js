@@ -399,8 +399,9 @@ function openForm(o) {
       ${o.intro ? `<p class="muted">${esc(o.intro)}</p>` : ''}
       ${o.fields.map(f => fieldHtml(f, v[f.k])).join('')}
       <p class="form-error" id="formerr"></p>
+      <div class="form-actions"><button type="button" class="btn" data-a="close-sheet">Abbrechen</button>
+        <button type="submit" class="btn primary">${esc(o.saveLabel || 'Sichern')}</button></div>
       ${o.onDelete ? `<button type="button" class="btn danger block" data-a="delete-sheet">${esc(o.deleteLabel || 'Löschen')}</button>` : ''}
-      <button type="submit" hidden></button>
     </form></div>`);
 }
 const formErr = m => { const el = document.getElementById('formerr'); if (el) el.textContent = m || ''; };
