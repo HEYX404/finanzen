@@ -1,6 +1,7 @@
 'use strict';
 (() => {
 // ---------- Konstanten ----------
+const APP_VERSION = '1.2';
 const STORE_KEY = 'finanzapp.vault.v1';
 const ITER = 600000;                 // PBKDF2-Iterationen (OWASP-Empfehlung für SHA-256)
 const HIDDEN_LOCK_MS = 60 * 1000;    // Sperre nach 1 Min. im Hintergrund
@@ -316,7 +317,7 @@ function vSettings() {
       <button class="btn block" data-a="lock">Jetzt sperren</button>
       <p class="muted small" style="margin:8px 0 0">Automatische Sperre nach 5 Minuten Inaktivität oder 1 Minute im Hintergrund.</p></div>
     <div class="card"><h3>Gefahrenzone</h3><button class="btn danger block" data-a="wipe">Alle Daten auf diesem Gerät löschen</button></div>
-    <p class="muted small center">${data.income.length} Einnahmen · ${data.fixed.length} Fixkosten · ${data.expenses.length} Ausgaben · ${data.contracts.length} Verträge<br>Gespeichert nur lokal und verschlüsselt auf diesem Gerät.</p>`;
+    <p class="muted small center">${data.income.length} Einnahmen · ${data.fixed.length} Fixkosten · ${data.expenses.length} Ausgaben · ${data.contracts.length} Verträge<br>Gespeichert nur lokal und verschlüsselt auf diesem Gerät.<br>App-Version ${APP_VERSION}</p>`;
 }
 
 // ---------- Sperrbildschirm ----------
@@ -674,7 +675,21 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+// Updates: beim Start und beim Zurückkehren in die App prüfen, neue Version automatisch laden
+if ('serviceWorker' in navigator) {
+  const hadController = !!navigator.serviceWorker.controller;
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController || reloaded) return;
+    reloaded = true;
+    if (formCtx) return; // offenes Formular nicht verwerfen – Update greift beim nächsten Start
+    location.reload();
+  });
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(reg => {
+    reg.update().catch(() => {});
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) reg.update().catch(() => {}); });
+  }).catch(() => {});
+}
 if (!window.crypto || !crypto.subtle) {
   $app.innerHTML = '<div class="lock"><div class="lock-card"><h1>Finanzen</h1><p>Diese App braucht eine sichere Verbindung (https). Bitte über die GitHub-Pages-Adresse öffnen.</p></div></div>';
 } else render();
