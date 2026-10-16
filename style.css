@@ -127,12 +127,14 @@ svg.i { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-widt
 /* Sheet / Formulare */
 .sheet-wrap { position: fixed; inset: 0; z-index: 20; background: rgba(0,0,0,.38); display: flex; align-items: flex-end; justify-content: center; }
 .sheet-wrap[hidden] { display: none; }
-.sheet { background: var(--card); width: 100%; max-width: 640px; max-height: 92vh; border-radius: 18px 18px 0 0;
-  display: flex; flex-direction: column; animation: up .18s ease-out; }
+.sheet { background: var(--card); width: 100%; max-width: 640px; max-height: 92vh;
+  max-height: calc(100dvh - env(safe-area-inset-top) - 12px); border-radius: 18px 18px 0 0;
+  display: flex; flex-direction: column; overflow: hidden; animation: up .18s ease-out; }
 @keyframes up { from { transform: translateY(30px); opacity: .6; } to { transform: none; opacity: 1; } }
 .sheet-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-bottom: 1px solid var(--line); gap: 8px; }
 .sheet-head strong { text-align: center; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sheet-body { overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 14px 16px calc(24px + env(safe-area-inset-bottom)); }
+.sheet-head { flex: none; }
+.sheet-body { flex: 1 1 auto; min-height: 0; overscroll-behavior: contain; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 14px 16px calc(24px + env(safe-area-inset-bottom)); }
 .field { margin-bottom: 12px; }
 .field > label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
 input[type=text], input[type=password], input[type=number], input[type=date], input[type=url], select, textarea {
@@ -166,3 +168,6 @@ textarea { resize: vertical; }
 .cover[hidden] { display: none; }
 
 button.card { display: block; width: 100%; text-align: left; }
+
+.form-actions { display: flex; gap: 10px; margin-top: 16px; }
+.form-actions .btn { flex: 1; }
