@@ -137,7 +137,7 @@ svg.i { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-widt
 .sheet-body { flex: 1 1 auto; min-height: 0; overscroll-behavior: contain; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 14px 16px calc(24px + env(safe-area-inset-bottom)); }
 .field { margin-bottom: 12px; }
 .field > label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
-input[type=text], input[type=password], input[type=number], input[type=date], input[type=url], select, textarea {
+input[type=text], input[type=search], input[type=password], input[type=number], input[type=date], input[type=url], select, textarea {
   width: 100%; font-size: 16px; padding: 11px 12px; border-radius: 10px; border: 1px solid var(--line);
   background: var(--bg); color: var(--text); -webkit-appearance: none; appearance: none; min-height: 44px; }
 select { background-image: none; }
@@ -171,3 +171,9 @@ button.card { display: block; width: 100%; text-align: left; }
 
 .form-actions { display: flex; gap: 10px; margin-top: 16px; }
 .form-actions .btn { flex: 1; }
+
+/* Logins */
+.search { margin: 4px 0 12px; }
+.list li[hidden], .empty[hidden] { display: none; }
+.kv dd .btn { flex: none; white-space: nowrap; }
+.kv dd .mono { min-width: 0; word-break: break-all; }

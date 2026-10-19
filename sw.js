@@ -1,6 +1,6 @@
 // Service Worker: macht die App offline nutzbar.
-// Bei Updates CACHE-Version hochzählen (z. B. finanzen-v2).
-const CACHE = 'finanzen-v2';
+// Bei Updates CACHE-Version hochzählen (z. B. finanzen-v3).
+const CACHE = 'finanzen-v3';
 const ASSETS = ['./', './index.html', './style.css', './app.js', './manifest.webmanifest',
   './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 

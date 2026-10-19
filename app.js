@@ -16,6 +16,7 @@ const ICON = {
   plan: '<svg class="i" viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>',
   doc: '<svg class="i" viewBox="0 0 24 24"><path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5M10 13h6M10 17h6"/></svg>',
   more: '<svg class="i" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/></svg>',
+  key: '<svg class="i" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M16 7l3 3M14 9l2 2"/></svg>',
   lock: '<svg class="i" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>'
 };
 
@@ -23,7 +24,7 @@ const ICON = {
 let key = null, salt = null, iter = ITER, data = null;
 let saving = Promise.resolve();
 let hiddenAt = 0, lastActivity = Date.now(), busy = false, formCtx = null, toastTimer = null;
-const ui = { tab: 'overview', month: ym(new Date()), open: new Set() };
+const ui = { tab: 'overview', month: ym(new Date()), open: new Set(), q: '' };
 const $app = document.getElementById('app');
 const $sheet = document.getElementById('sheet');
 const $toast = document.getElementById('toast');
@@ -124,12 +125,12 @@ function emptyData() {
   return {
     version: 1, income: [], fixed: [], savings: [],
     categories: [{ id: uid(), name: 'Essen', budget: 400 }, { id: uid(), name: 'Freizeit', budget: 100 }],
-    expenses: [], contracts: [], meta: { created: today(), lastExport: null }
+    expenses: [], contracts: [], logins: [], meta: { created: today(), lastExport: null }
   };
 }
 function normalize(d) {
   d = (d && typeof d === 'object') ? d : {};
-  for (const k of ['income', 'fixed', 'savings', 'categories', 'expenses', 'contracts']) if (!Array.isArray(d[k])) d[k] = [];
+  for (const k of ['income', 'fixed', 'savings', 'categories', 'expenses', 'contracts', 'logins']) if (!Array.isArray(d[k])) d[k] = [];
   d.meta = Object.assign({ created: today(), lastExport: null }, d.meta || {});
   d.version = 1; return d;
 }
@@ -147,6 +148,13 @@ function totals(m) {
     restPlan: income - fixed - budget - savings, restActual: income - fixed - actual - savings,
     rate: income > 0 ? savings / income : 0 };
 }
+// Passwörter, die in mehr als einem Login oder Vertrag vorkommen.
+function reusedPasswords() {
+  const n = new Map();
+  for (const x of [...data.logins, ...data.contracts]) if (x.password) n.set(x.password, (n.get(x.password) || 0) + 1);
+  return new Set([...n].filter(([, c]) => c > 1).map(([p]) => p));
+}
+const hostOf = u => { const s = safeUrl(u); try { return s ? new URL(s).host : ''; } catch { return ''; } };
 // Nächster Kündigungstermin aus Beginn, Mindestlaufzeit, Verlängerung und Frist (Näherung).
 function cancelInfo(c) {
   if (c.cancelled || !c.start) return null;
@@ -174,18 +182,20 @@ function deadlineBadge(c, i) {
 }
 
 // ---------- Rendering ----------
-const TITLES = { overview: 'Übersicht', expenses: 'Ausgaben', plan: 'Planung', contracts: 'Verträge', settings: 'Einstellungen' };
+const TITLES = { overview: 'Übersicht', expenses: 'Ausgaben', plan: 'Planung', contracts: 'Verträge', logins: 'Passwörter', settings: 'Einstellungen' };
 function render() {
   if (!data) return renderLock();
   const tabs = [['overview', 'Übersicht', ICON.home], ['expenses', 'Ausgaben', ICON.receipt], ['plan', 'Planung', ICON.plan],
-    ['contracts', 'Verträge', ICON.doc], ['settings', 'Mehr', ICON.more]];
-  const view = { overview: vOverview, expenses: vExpenses, plan: vPlan, contracts: vContracts, settings: vSettings }[ui.tab]();
+    ['contracts', 'Verträge', ICON.doc], ['logins', 'Logins', ICON.key], ['settings', 'Mehr', ICON.more]];
+  const view = { overview: vOverview, expenses: vExpenses, plan: vPlan, contracts: vContracts, logins: vLogins, settings: vSettings }[ui.tab]();
   $app.innerHTML = `
     <header class="top"><h1>${TITLES[ui.tab]}</h1><button class="icon-btn" data-a="lock" aria-label="Sperren">${ICON.lock}</button></header>
     <main class="content">${view}</main>
     ${ui.tab === 'expenses' ? '<button class="fab" data-a="add-expense" aria-label="Ausgabe hinzufügen">+</button>' : ''}
     ${ui.tab === 'contracts' ? '<button class="fab" data-a="add-contract" aria-label="Vertrag hinzufügen">+</button>' : ''}
+    ${ui.tab === 'logins' ? '<button class="fab" data-a="add-login" aria-label="Login hinzufügen">+</button>' : ''}
     <nav class="tabbar">${tabs.map(([k, l, ic]) => `<button class="tab ${ui.tab === k ? 'on' : ''}" data-a="tab" data-v="${k}">${ic}<span>${l}</span></button>`).join('')}</nav>`;
+  if (ui.tab === 'logins') applyFilter();
 }
 
 function monthBar() {
@@ -304,6 +314,31 @@ function vContracts() {
     <div class="line2"><span class="muted sub">${esc([c.name, c.category].filter(Boolean).join(' · '))}</span>${deadlineBadge(c, i)}</div></button>`).join('');
 }
 
+// Eigene Logins plus Zugangsdaten aus Verträgen (dort gepflegt, hier nur verlinkt).
+function vLogins() {
+  const reused = reusedPasswords();
+  const items = [
+    ...data.logins.map(l => ({ x: l, title: l.name, a: 'open-login', tag: '' })),
+    ...data.contracts.filter(c => c.username || c.password).map(c => ({ x: c, title: c.provider, a: 'open-contract', tag: '<span class="tag">Vertrag</span>' }))
+  ].sort((p, q) => String(p.title).localeCompare(String(q.title), 'de'));
+  if (!items.length) return '<div class="empty-state">Noch keine Logins.<br>Tippe auf +, um einen anzulegen.<br><span class="small">Zugangsdaten aus Verträgen erscheinen hier automatisch.</span></div>';
+  const n = items.filter(i => i.x.password && reused.has(i.x.password)).length;
+  return `<input type="search" id="loginsearch" class="search" placeholder="Suchen …" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" value="${esc(ui.q)}">
+    ${n ? `<p class="muted small" style="margin:0 0 10px"><span class="badge amber">${n} Einträge</span> nutzen ein Passwort mehrfach. Besser je Dienst ein eigenes verwenden.</p>` : ''}
+    <div class="card"><ul class="list">${items.map(({ x, title, a, tag }) => {
+      const q = [title, x.username, x.url, x.category, x.notes, x.name].filter(Boolean).join(' ').toLowerCase();
+      const sub = [x.username, hostOf(x.url)].filter(Boolean).join(' · ');
+      return `<li data-q="${esc(q)}"><button class="row" data-a="${a}" data-id="${esc(x.id)}">
+        <span class="grow"><strong>${esc(title)}${tag}</strong><span class="muted sub">${esc(sub || (x.category || ''))}</span></span>
+        ${x.password && reused.has(x.password) ? '<span class="badge amber">mehrfach</span>' : ''}</button></li>`;
+    }).join('')}</ul><p class="muted small empty" id="nohits" hidden>Keine Treffer.</p></div>`;
+}
+function applyFilter() {
+  const q = ui.q.trim().toLowerCase(); let hits = 0;
+  $app.querySelectorAll('li[data-q]').forEach(li => { const ok = !q || li.dataset.q.includes(q); li.hidden = !ok; if (ok) hits++; });
+  const nh = document.getElementById('nohits'); if (nh) nh.hidden = hits > 0;
+}
+
 function vSettings() {
   const le = data.meta.lastExport;
   return `<div class="card"><h3>Datensicherung</h3>
@@ -316,7 +351,7 @@ function vSettings() {
       <button class="btn block" data-a="lock">Jetzt sperren</button>
       <p class="muted small" style="margin:8px 0 0">Automatische Sperre nach 5 Minuten Inaktivität oder 1 Minute im Hintergrund.</p></div>
     <div class="card"><h3>Gefahrenzone</h3><button class="btn danger block" data-a="wipe">Alle Daten auf diesem Gerät löschen</button></div>
-    <p class="muted small center">${data.income.length} Einnahmen · ${data.fixed.length} Fixkosten · ${data.expenses.length} Ausgaben · ${data.contracts.length} Verträge<br>Gespeichert nur lokal und verschlüsselt auf diesem Gerät.</p>`;
+    <p class="muted small center">${data.income.length} Einnahmen · ${data.fixed.length} Fixkosten · ${data.expenses.length} Ausgaben · ${data.contracts.length} Verträge · ${data.logins.length} Logins<br>Gespeichert nur lokal und verschlüsselt auf diesem Gerät.</p>`;
 }
 
 // ---------- Sperrbildschirm ----------
@@ -556,6 +591,45 @@ function openContract(c) {
     </div></div>`);
 }
 
+function loginForm(l) {
+  const isNew = !l;
+  openForm({
+    title: isNew ? 'Neuer Login' : 'Login bearbeiten', values: l || {},
+    fields: [
+      { k: 'name', label: 'Name', type: 'text', required: true, placeholder: 'z. B. Amazon, Sparkasse' },
+      { k: 'url', label: 'Website (Link)', type: 'url', placeholder: 'https://…' },
+      { k: 'username', label: 'Benutzername / E-Mail', type: 'text', plain: true },
+      { k: 'password', label: 'Passwort', type: 'password', gen: true },
+      { k: 'category', label: 'Kategorie (optional)', type: 'text', placeholder: 'z. B. Bank, Shopping' },
+      { k: 'notes', label: 'Notiz', type: 'textarea', placeholder: 'z. B. Sicherheitsfrage, PIN-Hinweis, 2FA-Gerät' }],
+    onSave: v => {
+      if (isNew) { data.logins.push({ id: uid(), ...v }); save(); render(); }
+      else { Object.assign(l, v); save(); render(); openLogin(l); }
+    },
+    deleteLabel: 'Login löschen',
+    onDelete: isNew ? null : () => { data.logins = data.logins.filter(x => x !== l); save(); render(); }
+  });
+}
+function openLogin(l) {
+  formCtx = null;
+  const url = safeUrl(l.url), reused = l.password && reusedPasswords().has(l.password);
+  const cp = f => `<button class="btn small" data-a="copy" data-l="logins" data-id="${esc(l.id)}" data-f="${f}">Kopieren</button>`;
+  showSheet(`<div class="sheet" role="dialog" aria-modal="true">
+    <div class="sheet-head"><button class="link" data-a="close-sheet">Schließen</button><strong>${esc(l.name)}</strong>
+      <button class="link strong" data-a="edit-login" data-id="${esc(l.id)}">Bearbeiten</button></div>
+    <div class="sheet-body">
+      ${l.category || reused ? `<p style="margin:0 0 12px">${esc(l.category || '')} ${reused ? '<span class="badge amber">Passwort mehrfach verwendet</span>' : ''}</p>` : ''}
+      <h3 class="form-section">Zugang</h3><dl class="kv">
+        ${url ? `<dt>Website</dt><dd><a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(new URL(url).host)}</a></dd>` : ''}
+        ${l.username ? `<dt>Benutzer</dt><dd><span>${esc(l.username)}</span>${cp('username')}</dd>` : ''}
+        ${l.password ? `<dt>Passwort</dt><dd><span class="mono" id="pwval">••••••••</span>
+          <button class="btn small" data-a="reveal-pw" data-l="logins" data-id="${esc(l.id)}">Zeigen</button>${cp('password')}</dd>` : ''}</dl>
+      ${!url && !l.username && !l.password ? '<p class="muted small">Keine Zugangsdaten hinterlegt.</p>' : ''}
+      <h3 class="form-section">Notiz</h3>
+      ${l.notes ? `<div class="notes">${esc(l.notes)}</div>` : '<p class="muted small">Keine Notiz.</p>'}
+    </div></div>`);
+}
+
 // ---------- Export / Import ----------
 async function doExport() {
   try {
@@ -619,6 +693,7 @@ document.addEventListener('submit', e => {
   const f = e.target, k = f.dataset.form;
   if (k === 'unlock') onUnlock(f); else if (k === 'setup') onSetup(f); else if (k === 'sheet') submitSheet();
 });
+document.addEventListener('input', e => { if (e.target.id === 'loginsearch') { ui.q = e.target.value; applyFilter(); } });
 $sheet.addEventListener('click', e => { if (e.target === $sheet) closeSheet(); });
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-a]'); if (!b) return;
@@ -639,6 +714,9 @@ document.addEventListener('click', e => {
     case 'add-contract': contractForm(null); break;
     case 'open-contract': { const c = find('contracts', id); if (c) openContract(c); break; }
     case 'edit-contract': contractForm(find('contracts', id)); break;
+    case 'add-login': loginForm(null); break;
+    case 'open-login': { const l = find('logins', id); if (l) openLogin(l); break; }
+    case 'edit-login': loginForm(find('logins', id)); break;
     case 'close-sheet': closeSheet(); break;
     case 'submit-sheet': submitSheet(); break;
     case 'delete-sheet': {
@@ -648,9 +726,9 @@ document.addEventListener('click', e => {
     }
     case 'toggle-field-pw': { const el = document.getElementById(b.dataset.for); const show = el.type === 'password'; el.type = show ? 'text' : 'password'; b.textContent = show ? 'Verbergen' : 'Zeigen'; break; }
     case 'gen-pw': { const el = document.getElementById(b.dataset.for); if (el.value && !confirm('Vorhandenes Passwort ersetzen?')) break; el.value = genPassword(); el.type = 'text'; break; }
-    case 'reveal-pw': { const c = find('contracts', id), el = document.getElementById('pwval'); if (!c || !el) break;
+    case 'reveal-pw': { const c = find(b.dataset.l || 'contracts', id), el = document.getElementById('pwval'); if (!c || !el) break;
       const show = b.textContent === 'Zeigen'; el.textContent = show ? c.password : '••••••••'; b.textContent = show ? 'Verbergen' : 'Zeigen'; break; }
-    case 'copy': { const c = find('contracts', id); if (c) copy(c[b.dataset.f]); break; }
+    case 'copy': { const c = find(b.dataset.l || 'contracts', id); if (c) copy(c[b.dataset.f]); break; }
     case 'export': doExport(); break;
     case 'import': doImport(false); break;
     case 'import-setup': doImport(true); break;
